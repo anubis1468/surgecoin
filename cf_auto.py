@@ -21,7 +21,7 @@ import urllib.request
 ROOT = Path(__file__).resolve().parent
 CF_DIR = ROOT / "backend_cf"
 SRC_DIR = CF_DIR / "src"
-WORKER_NAME = "surgecoin-backend"  # change if you like
+WORKER_NAME = "surgecoin-backend"
 KV_BINDING = "SURGECOIN_DB"
 
 
