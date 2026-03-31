@@ -18,48 +18,55 @@ jobs:
 
     steps:
     - name: Checkout repo
-      uses: actions/checkout@v4
-
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.12"
+      uses: actions/checkout@v5
 
     - name: Setup Node 24
       uses: actions/setup-node@v4
       with:
         node-version: "24"
 
-    - name: Install Wrangler
+    - name: Setup Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install Wrangler (Node 24 compatible)
       run: npm install -g wrangler
 
-    - name: Create backend_cf folder if missing
+    - name: Ensure backend_cf structure
       run: mkdir -p backend_cf/src
 
     - name: Generate Cloudflare backend (cf_auto.py)
       run: python cf_auto.py
 
-    - name: Authenticate Wrangler
-      run: wrangler login --scopes "workers scripts kv namespaces pages"
+    - name: Authenticate Wrangler (non-interactive)
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      run: |
+        wrangler config set api_token $CLOUDFLARE_API_TOKEN
 
     - name: Ensure KV namespace exists
       run: |
-        wrangler kv namespace create $CF_KV_NAMESPACE || echo "KV exists"
-
-    - name: Bind KV namespace to Worker
-      run: |
-        wrangler kv namespace list | grep $CF_KV_NAMESPACE || wrangler kv namespace create $CF_KV_NAMESPACE
+        wrangler kv namespace list | grep "$CF_KV_NAMESPACE" || wrangler kv namespace create "$CF_KV_NAMESPACE"
 
     - name: Deploy Cloudflare Worker
       run: wrangler deploy --config backend_cf/wrangler.toml
 
-    - name: Deploy Cloudflare Pages (website/admin)
+    - name: Deploy Cloudflare Pages (website)
       run: |
-        wrangler pages deploy website --project-name=surgecoin-site
+        if [ -d "website" ]; then
+          wrangler pages deploy website --project-name=surgecoin-site
+        else
+          echo "No website/ directory, skipping Pages deploy."
+        fi
 
-    - name: Deploy Bot (Cloudflare Pages Worker Mode)
+    - name: Deploy Cloudflare Pages (bot)
       run: |
-        wrangler pages deploy bot --project-name=surgecoin-bot
+        if [ -d "bot" ]; then
+          wrangler pages deploy bot --project-name=surgecoin-bot
+        else
+          echo "No bot/ directory, skipping bot Pages deploy."
+        fi
 
     - name: Auto Versioning
       id: version
@@ -70,13 +77,15 @@ jobs:
     - name: Generate Changelog
       run: |
         echo "## Changelog for ${{ steps.version.outputs.version }}" > CHANGELOG.md
-        git log -1 --pretty=format:"- %s" >> CHANGELOG.md
+        git log -5 --pretty=format:"- %s" >> CHANGELOG.md
 
     - name: Commit & Push Changelog
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         git config user.name "github-actions"
         git config user.email "actions@github.com"
-        git add CHANGELOG.md
-        git commit -m "Update changelog for ${{ steps.version.outputs.version }}" || echo "No changes"
+        git add CHANGELOG.md || echo "Nothing to add"
+        git commit -m "Update changelog for ${{ steps.version.outputs.version }}" || echo "No changes to commit"
         git push || echo "No push needed"
 
